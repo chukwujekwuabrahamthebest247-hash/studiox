@@ -41,111 +41,111 @@ function buildOpenAIMessages(systemPrompt: string | undefined, messages: Incomin
   return formatted;
 }
 
-async function startServer() {
-  const app = express();
-  app.use(express.json({ limit: '25mb' }));
+const app = express();
+app.use(express.json({ limit: '25mb' }));
 
-  app.get('/api/gemini/status', (_req, res) => {
-    res.json({
-      configured: Boolean(process.env.OPENAI_BASE_URL),
-      defaultModel: DEFAULT_MODEL,
-      models: [
-        { id: 'qwen2.5-7b-instruct', name: 'Qwen 2.5 7B (Colab)', badge: 'Recommended' },
-      ],
-    });
+app.get('/api/gemini/status', (_req, res) => {
+  res.json({
+    configured: Boolean(process.env.OPENAI_BASE_URL),
+    defaultModel: DEFAULT_MODEL,
+    models: [
+      { id: 'qwen2.5-7b-instruct', name: 'Qwen 2.5 7B (Colab)', badge: 'Recommended' },
+    ],
   });
+});
 
-  app.post('/api/gemini/chat', async (req, res) => {
-    try {
-      const baseUrl = process.env.OPENAI_BASE_URL?.replace(/\/+$/, '');
-      if (!baseUrl) {
-        res.status(500).json({ error: 'OPENAI_BASE_URL is not configured in Vercel Environment Variables.' });
-        return;
-      }
-
-      const {
-        systemPrompt,
-        messages,
-        temperature,
-      } = req.body as {
-        model?: string;
-        systemPrompt?: string;
-        messages?: IncomingMessage[];
-        temperature?: number;
-      };
-
-      if (!Array.isArray(messages) || messages.length === 0) {
-        res.status(400).json({ error: 'messages array is required.' });
-        return;
-      }
-
-      const openAIMessages = buildOpenAIMessages(systemPrompt, messages);
-
-      const response = await fetch(`${baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY || 'sk-no-key-required'}`,
-          'Bypass-Tunnel-Reminder': 'true',
-        },
-        body: JSON.stringify({
-          model: DEFAULT_MODEL,
-          messages: openAIMessages,
-          temperature: typeof temperature === 'number' ? temperature : 0.7,
-          max_tokens: 1024,
-        }),
-      });
-
-      if (!response.ok) {
-        const errText = await response.text();
-        res.status(response.status).json({ error: `Colab AI server error (${response.status}): ${errText}` });
-        return;
-      }
-
-      const data = await response.json();
-      const text = data?.choices?.[0]?.message?.content ?? '';
-
-      if (!text.trim()) {
-        res.status(502).json({ error: 'Colab AI model returned an empty response.' });
-        return;
-      }
-
-      res.json({ text, model: DEFAULT_MODEL });
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message || 'Failed to reach Colab AI server.' });
+app.post('/api/gemini/chat', async (req, res) => {
+  try {
+    const baseUrl = process.env.OPENAI_BASE_URL?.replace(/\/+$/, '');
+    if (!baseUrl) {
+      res.status(500).json({ error: 'OPENAI_BASE_URL is not configured in Vercel Environment Variables.' });
+      return;
     }
-  });
 
-  if (process.env.NODE_ENV !== 'production') {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: {
-        middlewareMode: true,
-        hmr: process.env.DISABLE_HMR !== 'true',
-        watch: process.env.DISABLE_HMR === 'true' ? null : {},
+    const {
+      systemPrompt,
+      messages,
+      temperature,
+    } = req.body as {
+      model?: string;
+      systemPrompt?: string;
+      messages?: IncomingMessage[];
+      temperature?: number;
+    };
+
+    if (!Array.isArray(messages) || messages.length === 0) {
+      res.status(400).json({ error: 'messages array is required.' });
+      return;
+    }
+
+    const openAIMessages = buildOpenAIMessages(systemPrompt, messages);
+
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY || 'sk-no-key-required'}`,
+        'Bypass-Tunnel-Reminder': 'true',
       },
-      appType: 'spa',
+      body: JSON.stringify({
+        model: DEFAULT_MODEL,
+        messages: openAIMessages,
+        temperature: typeof temperature === 'number' ? temperature : 0.7,
+        max_tokens: 1024,
+      }),
     });
-    app.use(vite.middlewares);
-  } else {
-    const distDir = path.join(__dirname, 'dist');
-    app.use(express.static(distDir));
-    app.get('*', (_req, res) => {
-      const indexPath = path.join(distDir, 'index.html');
-      if (fs.existsSync(indexPath)) {
-        res.sendFile(indexPath);
-      } else {
-        res.status(404).send('Build output not found.');
-      }
-    });
-  }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`StudioX server listening on http://0.0.0.0:${PORT}`);
-  });
+    if (!response.ok) {
+      const errText = await response.text();
+      res.status(response.status).json({ error: `Colab AI server error (${response.status}): ${errText}` });
+      return;
+    }
+
+    const data = await response.json();
+    const text = data?.choices?.[0]?.message?.content ?? '';
+
+    if (!text.trim()) {
+      res.status(502).json({ error: 'Colab AI model returned an empty response.' });
+      return;
+    }
+
+    res.json({ text, model: DEFAULT_MODEL });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to reach Colab AI server.' });
+  }
+});
+
+// Only listen on a port when running locally (Vercel uses the exported app)
+if (!process.env.VERCEL) {
+  (async () => {
+    if (process.env.NODE_ENV !== 'production') {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: {
+          middlewareMode: true,
+          hmr: process.env.DISABLE_HMR !== 'true',
+          watch: process.env.DISABLE_HMR === 'true' ? null : {},
+        },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    } else {
+      const distDir = path.join(__dirname, 'dist');
+      app.use(express.static(distDir));
+      app.get('*', (_req, res) => {
+        const indexPath = path.join(distDir, 'index.html');
+        if (fs.existsSync(indexPath)) {
+          res.sendFile(indexPath);
+        } else {
+          res.status(404).send('Build output not found.');
+        }
+      });
+    }
+
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`StudioX server listening on http://0.0.0:${PORT}`);
+    });
+  })();
 }
 
-startServer().catch((err) => {
-  console.error('Failed to start StudioX server:', err);
-  process.exit(1);
-});
+export default app;
